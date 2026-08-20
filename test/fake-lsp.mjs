@@ -1,6 +1,5 @@
 import { stdin, stdout } from "node:process";
 let buffer = Buffer.alloc(0);
-let received = [];
 let currentUri = null;
 let changeCount = 0;
 stdin.on("data", (chunk) => {
@@ -17,32 +16,33 @@ stdin.on("data", (chunk) => {
     handle(message);
   }
 });
-function send(message) {
-  const body = JSON.stringify(message);
+const send = (msg) => {
+  const body = JSON.stringify(msg);
   stdout.write(`Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
-}
-function publishDiagnostics(message) {
+};
+const publish = (msg, version) => {
   send({
     jsonrpc: "2.0",
     method: "textDocument/publishDiagnostics",
     params: {
       uri: currentUri ?? "file:///fixture.ts",
-      diagnostics: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 1, message }],
+      version: version ?? null,
+      diagnostics: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 1, message: msg }],
     },
   });
-}
-function handle(message) {
-  if (message.method === "textDocument/didOpen") {
-    currentUri = message.params.textDocument.uri;
-    received.push(message.method);
-    publishDiagnostics("v1");
+};
+const handle = (msg) => {
+  if (msg.method === "textDocument/didOpen") {
+    currentUri = msg.params.textDocument.uri;
+    publish("v1", msg.params.textDocument.version);
   }
-  if (message.method === "textDocument/didChange") {
-    currentUri = message.params.textDocument.uri;
+  if (msg.method === "textDocument/didChange") {
+    currentUri = msg.params.textDocument.uri;
     changeCount += 1;
-    received.push(message.method);
-    publishDiagnostics(`v2-${changeCount}`);
+    publish(`v2-${changeCount}`, msg.params.textDocument.version);
   }
-  if (message.method === "initialize") return send({ jsonrpc: "2.0", id: message.id, result: { capabilities: {} } });
-  if (message.method === "shutdown") return send({ jsonrpc: "2.0", id: message.id, result: null });
-}
+  if (msg.method === "initialize") return send({ jsonrpc: "2.0", id: msg.id, result: { capabilities: {} } });
+  if (msg.method === "shutdown") return send({ jsonrpc: "2.0", id: msg.id, result: null });
+  if (msg.method === "workspace/configuration") return send({ jsonrpc: "2.0", id: msg.id, result: msg.params.items.map(() => null) });
+  if (msg.method === "workspace/workspaceFolders") return send({ jsonrpc: "2.0", id: msg.id, result: [{ uri: "file:///tmp", name: "tmp" }] });
+};
